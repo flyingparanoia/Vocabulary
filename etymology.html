@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>词根家族树 · 多属性可视化（改良版）</title>
+<style>
+        :root {
+            /* Dark Theme (Default) */
+            --bg: #0f1115; --panel: #161a22; --panel2: #121722; --text: #e6e7ea; --muted: #9aa3b2;
+            --border: #242a36; --accent: #7aa2ff; --hl: #2a3b63; --ok: #50fa7b;
+            --shadow: rgba(0, 0, 0, 0.2);
+            --code-bg: #111826; --code-border: #222a3f;
+            --toggle-bg: #162036; --toggle-border: #2b3750; --toggle-text: #cfd8ff;
+            --badge-bg: #1a2233; --badge-border: #2b3750; --badge-text: #cdd7ff;
+            --tag-bg: #192033; --tag-border: #26304b; --tag-text: #cbd5e1;
+            --pill-bg: #172033; --pill-border: #2b3750; --pill-text: #cfe4ff;
+            --focus: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+            --colW: 384px; /* 可通过滑块动态调节 (默认 384px) */
+            --radius: 12px;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                /* Light Theme */
+                --bg: #f8f9fa; --panel: #ffffff; --panel2: #f1f3f5; --text: #212529; --muted: #6c757d;
+                --border: #dee2e6; --accent: #0d6efd; --hl: #cfe2ff; --ok: #198754;
+                --shadow: rgba(0, 0, 0, 0.06);
+                --code-bg: #e9ecef; --code-border: #ced4da;
+                --toggle-bg: #e9ecef; --toggle-border: #ced4da; --toggle-text: #495057;
+                --badge-bg: #e7f5ff; --badge-border: #a5d8ff; --badge-text: #0d6efd;
+                --tag-bg: #f1f3f5; --tag-border: #dee2e6; --tag-text: #495057;
+                --pill-bg: #e9ecef; --pill-border: #ced4da; --pill-text: #343a40;
+            }
+        }
+
+        * { box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            /* 使用 Noto Sans SC 作为备用 */
+            font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* =================== 顶部工具栏 =================== */
+        header {
+            position: sticky; top: 0; z-index: 20;
+            background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 86%, transparent) 0%, transparent 100%);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+        }
+        header .wrap { max-width: 1800px; margin: 0 auto; padding: 14px 16px; }
+        header h1 { font-size: 20px; margin: 0 0 8px 0; font-weight: 700; letter-spacing: .3px; }
+
+        /* 更新 grid 布局为三列：按钮, 搜索框, 工具组 */
+        header .toolbar { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+        header .tools { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+        header input[type="search"] {
+            width: 100%; min-width: 240px; padding: 10px 14px; border-radius: 10px;
+            border: 1px solid var(--border); background: var(--panel2); color: var(--text); outline: none;
+            transition: box-shadow .2s, border-color .2s; box-shadow: none;
+        }
+        header input[type="search"]:focus { border-color: var(--accent); box-shadow: var(--focus); }
+
+        header .btn {
+            padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border);
+            background: var(--panel); color: var(--text); cursor: pointer; font-weight: 600; font-size: 13px;
+            transition: transform .08s ease, border-color .2s, color .2s, background-color .2s;
+            user-select: none; white-space: nowrap;
+        }
+        header .btn:hover { border-color: var(--accent); color: var(--accent); }
+        header .btn:active { transform: translateY(1px); }
+        header .btn[data-active="true"] { 
+            outline: none; border-color: var(--accent); 
+            /* 激活状态使用高亮色 */
+            background: var(--hl); color: var(--accent);
+        }
+
+        header .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+        header .seg .btn { border: none; border-right: 1px solid var(--border); border-radius: 0; padding: 8px 12px; }
+        header .seg .btn:last-child { border-right: none; }
+        header .seg .btn[data-active="true"] {
+            background: var(--accent); color: var(--bg); border-color: var(--accent);
+        }
+
+
+        header .slider { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); }
+        header .slider input { accent-color: var(--accent); }
+        header .hint { color: var(--muted); font-size: 12px; }
+        header #colWidthVal { width: 45px; text-align: right; }
+
+        /* =================== 主区布局（两种模式：横向轮播 / 自适应网格） =================== */
+        main {
+            max-width: 1800px; margin: 12px auto 80px; padding: 0 16px;
+            gap: 24px; align-items: start;
+        }
+
+        /* 适配： vocab-container 是卡片组的容器 */
+        /* 轮播模式 */
+        body[data-layout="scroll"] #vocab-container {
+            display: flex; overflow-x: auto; gap: 24px; align-items: start;
+            scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; -ms-overflow-style: none;
+        }
+        body[data-layout="scroll"] #vocab-container::-webkit-scrollbar { display: none; }
+        body[data-layout="scroll"] #vocab-container .card { 
+            flex: 0 0 var(--colW); 
+            scroll-snap-align: start; 
+            width: var(--colW);
+        }
+
+        /* 网格模式 */
+        body[data-layout="grid"] #vocab-container { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--colW)), 1fr)); 
+            gap: 24px;
+        }
+        body[data-layout="grid"] #vocab-container .card { width: 100%; }
+
+
+        /* =================== 卡片样式 =================== */
+        .card {
+            background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+            box-shadow: 0 8px 20px var(--shadow); 
+            transition: box-shadow .2s ease, transform .15s ease, border-color .2s;
+            overflow: hidden; /* 确保圆角裁切 */
+        }
+        .card:hover { box-shadow: 0 12px 28px var(--shadow); }
+        
+        /* 搜索高亮和隐藏 */
+        .card.highlight {
+            border-color: var(--accent);
+            box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 20%, transparent);
+        }
+        .card.hidden { display: none; }
+        
+        /* 卡片内部组件样式 */
+        .card-header { padding: 20px; border-bottom: 1px solid var(--border); }
+        .card-content { padding: 20px; }
+        
+        /* 密度：紧凑 / 舒适 */
+        body[data-density="compact"] .card-header,
+        body[data-density="compact"] .card-content { padding: 14px 16px; }
+        body[data-density="cozy"] .card-header,
+        body[data-density="cozy"] .card-content { padding: 20px 24px; }
+        
+        /* --- 适配 tree --- */
+        body[data-density="compact"] .tree details > summary { padding: 10px 12px; }
+        body[data-density="cozy"] .tree details > summary { padding: 16px; }
+        /* --- 适配 meta-grid --- */
+        body[data-density="compact"] .details-content { padding: 12px; }
+        body[data-density="cozy"] .details-content { padding: 16px; }
+
+        .section-title { font-size: 1.25rem; font-weight: 700; color: var(--text); }
+        h2.text-2xl { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+        .text-gray-500 { color: var(--muted); }
+        
+        details > summary {
+            cursor: pointer;
+            background-color: var(--panel2);
+            border-radius: 8px;
+            font-weight: 600;
+            color: var(--text);
+            transition: background-color 0.2s ease;
+            list-style: none;
+            margin-top: 8px;
+        }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary::before {
+            content: '▶';
+            margin-right: 10px;
+            font-size: 0.8em;
+            transition: transform 0.2s ease-in-out;
+            display: inline-block; /* 确保 transform 生效 */
+        }
+        details[open] > summary::before { transform: rotate(90deg); }
+        details[open] > summary { background-color: color-mix(in srgb, var(--panel) 80%, var(--panel2)); }
+        
+        .details-content { 
+            padding: 16px; 
+            border-top: 1px solid var(--border); 
+            margin-top: 8px;
+        }
+        
+        .pron-btn {
+            cursor: pointer; display: inline-flex; align-items: center;
+            padding: 4px 8px; border-radius: 6px;
+            background-color: var(--panel2);
+            border: 1px solid var(--border);
+            font-size: 0.9rem; font-weight: 500;
+            color: var(--muted);
+            transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+        }
+        .pron-btn:hover { background-color: var(--hl); border-color: var(--accent); color: var(--accent); }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid var(--border); padding: 12px; text-align: left; }
+        th { background-color: var(--panel2); font-weight: 600; }
+        
+        .quiz-item { margin-top: 1rem; padding: 1rem; background: var(--panel2); border-radius: 8px; }
+        .quiz-option { margin: 0.5rem 0; }
+        
+        .chip{
+            display:inline-block; padding: 2px 8px; border-radius: 999px;
+            font-size: 12px; line-height: 1.6; margin-right: 6px;
+            color: var(--badge-text); background: var(--badge-bg); border: 1px solid var(--badge-border);
+        }
+        /* 保持CEFR颜色 */
+        .chip.cefr-B1{background:#eef2ff;border-color:#c7d2fe;color:#4338ca;}
+        .chip.cefr-B2{background:#e0f2fe;border-color:#bae6fd;color:#0369a1;}
+        .chip.cefr-C1{background:#f0fdf4;border-color:#bbf7d0;color:#15803d;}
+        .chip.cefr-C2{background:#fefce8;border-color:#fde047;color:#854d0e;}
+        @media (prefers-color-scheme: dark) {
+            .chip.cefr-B1{background:#3730a3;border-color:#4f46e5;color:#e0e7ff;}
+            .chip.cefr-B2{background:#0c4a6e;border-color:#0ea5e9;color:#e0f2fe;}
+            .chip.cefr-C1{background:#166534;border-color:#22c55e;color:#dcfce7;}
+            .chip.cefr-C2{background:#713f12;border-color:#eab308;color:#fefce8;}
+        }
+
+        /* 拖拽占位 */
+        .sortable-ghost { 
+            opacity: 0.4; 
+            background: var(--hl); 
+            border: 2px dashed var(--accent);
+            border-radius: var(--radius);
+        }
+        .card-draggable { cursor: grab; }
+        .card-draggable:active { cursor: grabbing; }
+
+        /* 总表样式 */
+        #summary-container .card {
+             background: var(--panel);
+        }
+        #summary-container .section-title {
+            padding: 10px 0;
+            color: var(--text);
+        }
+        #summary-container details > summary {
+            background: var(--panel);
+        }
+        #summary-container details[open] > summary {
+             background: var(--panel);
+        }
+        #summary-container .details-content {
+            padding: 0;
+            border-top: none;
+        }
+        #summary-container table {
+            margin-top: 0;
+            border: none;
+        }
+         #summary-container th, #summary-container td {
+            border-color: var(--border);
+         }
+         #summary-container th {
+            background-color: var(--panel2);
+            color: var(--text);
+         }
+         #summary-container tr:nth-child(even) {
+            background-color: var(--panel2);
+         }
+         #summary-container tr:nth-child(odd) {
+            background-color: var(--panel);
+         }
+
+
+        /* 打印样式 */
+        @media print{
+            body{ background:#fff; font-size: 10pt; color: #000; }
+            header { display: none !important; }
+            .card{ box-shadow:none; border:1px solid #dee2e6; page-break-inside: avoid; background: #fff; }
+            details{ border:none; }
+            details[open] { page-break-inside: avoid; }
+            summary::before { display: none; }
+            .pron-btn, footer, script, #summary-container { display:none !important; }
+            #vocab-container { display: block; } 
+            body[data-layout="grid"] #vocab-container { display: block; }
+            #vocab-container .card { width: 100% !important; }
+            h1, h2, h3 { font-size: 1.2em; color: #000; }
+            a { text-decoration: none; color: black; }
+        }
+        
+        /* 模态框样式 */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000; opacity: 0; transition: opacity .2s; pointer-events: none;
+        }
+        .modal-overlay[data-visible="true"] { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: var(--panel); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 24px 30px;
+            max-width: 400px; width: 90%;
+            box-shadow: 0 10px 30px var(--shadow);
+            transform: scale(0.95); transition: transform .2s;
+        }
+        .modal-overlay[data-visible="true"] .modal-content { transform: scale(1); }
+        .modal-content h3 { margin-top: 0; color: var(--accent); }
+        .modal-content p { color: var(--text); }
+        .modal-content #closeErrorModal { 
+            margin-top: 20px; 
+            background: var(--accent); 
+            color: var(--bg); 
+            border-color: var(--accent); 
+            width: 100%;
+            padding: 10px;
+            font-weight: 700;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .modal-content #closeErrorModal:hover { background: color-mix(in srgb, var(--accent) 80%, white); }
+    
+    /* --- 树状结构 样式 (从旧CSS迁移并适配) --- */
+    /* 树结构 */
+     .tree { --indent: 18px; }
+     .node { position: relative; padding-left: 22px; border-left: 1px dashed #293244; margin-left: 10px; }
+     .node::before { content: ""; position: absolute; left: -1px; top: 1.1em; width: 11px; border-top: 1px dashed #293244; }
+     .node.root { border-left: none; padding-left: 0; margin-left: 0; }
+     .row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 1px 0; border-radius: 8px; }
+     .row:hover { background: var(--panel2); }
+     .toggle { width: 16px; height: 16px; line-height: 14px; text-align: center; border: 1px solid var(--toggle-border); border-radius: 4px; background: var(--toggle-bg); color: var(--toggle-text); cursor: pointer; user-select: none; flex-shrink: 0; }
+     .toggle.leaf { opacity: .35; cursor: default; }
+     .children { margin-left: 14px; padding-left: 8px; border-left: 1px dashed #2a3347; display: none; }
+     .node.open > .children { display: block; }
+     .node.open > .row .toggle:not(.leaf)::after { content: "–"; }
+     .node > .row .toggle:not(.leaf)::after { content: "+"; }
+     .node > .row .toggle.leaf::after { content: "·"; }
+     .pill { font-size: 11px; padding: 2px 6px; border-radius: 6px; background: var(--pill-bg); border: 1px solid var(--pill-border); color: var(--pill-text); }
+     mark { background: var(--hl); color: var(--accent); padding: 0 2px; border-radius: 4px; }
+     code { background: var(--code-bg); border: 1px solid var(--code-border); padding: 1px 5px; border-radius: 6px; font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "Liberation Mono", monospace; }
+
+     /* 属性区域 (从旧CSS迁移并适配) */
+     .meta-grid { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; align-items: baseline; }
+     .meta-grid .k { grid-column: 1; font-size: 13px; color: var(--muted); text-align: right; font-weight: 600; }
+     .meta-grid .v { grid-column: 2; word-break: break-word; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+     .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+     .badge { font-size: 12px; color: var(--badge-text); background: var(--badge-bg); border: 1px solid var(--badge-border); border-radius: 999px; padding: 2px 8px; }
+     .tag { font-size: 12px; color: var(--tag-text); background: var(--tag-bg); border: 1px solid var(--tag-border); border-radius: 6px; padding: 2px 6px; }
+     .muted { color: var(--muted); }
+
+    /* 响应式 (从旧CSS迁移并适配) */
+     @media (max-width: 560px) {
+        :root { --colW: 92vw; }
+        .meta-grid { grid-template-columns: 1fr; gap: 8px 0; }
+        .meta-grid .k { grid-column: 1; text-align: left; font-size: 12px; margin-bottom: -6px; }
+        .meta-grid .v { grid-column: 1; }
+        .row { flex-wrap: wrap; }
+        header .toolbar { grid-template-columns: 1fr; }
+     }
+</style>
+</head>
+<body data-layout="grid" data-density="cozy" data-drag="off">
+
+<header>
+  <div class="wrap">
+    <h1>词根家族树 · 多属性可视化</h1>
+    <div class="toolbar">
+      <!-- 粘贴按钮移到搜索框左侧 -->
+      <button class="btn" id="pasteData" title="从剪贴板粘贴新的词根数据">📋 粘贴数据</button>
+      
+      <input id="q" type="search" placeholder="🔎 搜索所有词根家族… (支持高亮)" aria-label="搜索词根">
+      
+      <div class="tools" role="group" aria-label="视图与操作">
+        <div class="seg" aria-label="布局切换">
+          <button class="btn" id="btnGrid" data-active="true" title="自适应网格">网格</button>
+          <button class="btn" id="btnScroll" title="横向轮播">轮播</button>
+        </div>
+        <div class="seg" aria-label="密度切换">
+          <button class="btn" id="btnCozy" data-active="true" title="舒适">舒适</button>
+          <button class="btn" id="btnCompact" title="紧凑">紧凑</button>
+        </div>
+        <div class="slider" title="列宽">
+          <span class="hint">列宽</span>
+          <!-- 更新默认值为 384 -->
+          <input id="colWidth" type="range" min="320" max="640" step="10" value="384" />
+          <span id="colWidthVal" class="hint">384px</span>
+        </div>
+
+        <button class="btn" id="toggleDrag" title="拖拽重排（开启后可拖动每一列进行排序）">拖拽关</button>
+        <button class="btn" id="expandAll" title="展开全部">全部展开</button>
+        <button class="btn" id="collapseAll" title="折叠非根">全部折叠</button>
+        <a href="https://flyingparanoia.github.io/Vocabulary/etymology.html" target="_blank" rel="noopener noreferrer" class="btn">
+          🔀 近义词比较
+        </a>
+        
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- 容器 ID 更新为 vocab-container -->
+<main id="vocab-container" aria-live="polite"></main>
+
+<!-- 错误提示模态框 (更新为 data-visible) -->
+<div id="errorModal" class="modal-overlay" data-visible="false">
+  <div class="modal-content">
+    <h3 id="errorTitle">粘贴失败</h3>
+    <p id="errorText"></p>
+    <button id="closeErrorModal" class_="btn">关闭</button> <!-- class_ just to avoid conflict, will be styled by ID -->
+  </div>
+</div>
+
+<script>
+/* =================== 数据源 =================== */
+const allData = []; // 默认清空，等待粘贴
+
+/* =================== 工具函数 =================== */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+// JS 变量更新
+const vocabContainer = $("#vocab-container");
+
+/* 新增：模态框控制函数 (更新为 data-visible) */
+function showErrorModal(message, title = "操作失败") {
+  $('#errorTitle').textContent = title;
+  $('#errorText').textContent = message;
+  $('#errorModal').dataset.visible = 'true';
+}
+function hideErrorModal() {
+  $('#errorModal').dataset.visible = 'false';
+}
+
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  Object.entries(attrs).forEach(([k, v]) => {
+    if (k === "class") n.className = v;
+    else if (k === "html") n.innerHTML = v;
+    else if (k === "dataset") Object.assign(n.dataset, v);
+    else n.setAttribute(k, v);
+  });
+  kids.forEach(k => n.append(k?.nodeType ? k : document.createTextNode(k)));
+  return n;
+}
+function hl(t, q) { if (!q) return t; const s = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); return t.replace(new RegExp(s, "gi"), m => `<mark>${m}</mark>`); }
+function makeRow(title, right = [], leaf = false) {
+  const t = el("div", { class: "toggle" + (leaf ? " leaf" : ""), role: leaf?"img":"button", tabindex: leaf?"-1":"0", "aria-label": leaf?"叶节点":"展开/折叠" });
+  const row = el("div", { class: "row" }, t, el("div", { class: "title", html: title }), ...right);
+  return { row, toggle: t };
+}
+function makeNode(content, children = []) {
+  const node = el("div", { class: "node" });
+  const kids = el("div", { class: "children" }, ...children);
+  node.append(content, kids);
+  return node;
+}
+
+/* =================== 渲染函数 (重构) =================== */
+
+function renderMeta(header, root, q = "") {
+  // 1. 渲染卡片标题
+  const title = el("h2", { class: "section-title", html: hl(root.key, q) + ` <span class="text-gray-500">（${hl(root.base_meaning || "", q)}）</span>` });
+  header.append(title);
+  
+  // 2. 渲染可折叠的核心属性
+  const details = el("details", { class: "meta-details" });
+  const summary = el("summary", {}, 
+    "核心属性 ", 
+    el("span", {class: 'chip'}, `${Object.keys(root).filter(k=>k!=='key'&&k!=='base_meaning').length} 项`)
+  );
+  
+  const detailsContent = el("div", { class: "details-content" });
+  const metaGrid = el("div", { class: "meta-grid" });
+  
+  const pairs = [
+    ["来源语言", root.origin_language], ["音标", root.phonetic], ["衍生形式", (root.derived_forms || []).join(", ")],
+    ["语义场", (root.semantic_field || []).join(", ")], ["同源词根", (root.related_roots || []).join(", ")], ["对比词根", (root.contrast_roots || []).join(", ")],
+    ["词源路径", root.etymology_path], ["记忆联想", root.mnemonic]
+  ];
+  pairs.forEach(([k, v]) => { if (v) { metaGrid.append(el("div", { class: "k" }, k)); metaGrid.append(el("div", { class: "v", html: hl(String(v), q) })); } });
+  
+  detailsContent.append(metaGrid);
+  details.append(summary, detailsContent);
+  header.append(details);
+}
+
+function renderTree(container, data, q = "") {
+  // 树状结构现在直接在 card-content 中
+  const rootTitle = `<strong>${hl(data.root.key, q)}</strong> <span class="muted">（${hl(data.root.base_meaning || "", q)}）</span>`;
+  const { row: rootRow } = makeRow(rootTitle, [el("span", { class: "pill" }, "ROOT")]);
+  const rootNode = makeNode(rootRow);
+  rootNode.classList.add("root", "open"); // 默认展开根节点
+
+  const childrenContainer = rootNode.querySelector(".children");
+
+  // Only render trunk words section if data exists
+  if (data.trunk_words && data.trunk_words.length > 0) {
+    const trunkHead = makeRow("母体派生", [el("span", { class: "badge" }, `${data.trunk_words.length} 词`)]);
+    const trunkChildren = data.trunk_words.map(x => makeNode(makeRow(`<code>${hl(x.w, q)}</code> <span class="muted">— ${hl(x.zh || "", q)}</span>`, [x.hint ? el("span", { class: "tag" }, x.hint) : ""], true).row));
+    const trunkNode = makeNode(trunkHead.row, trunkChildren);
+    trunkNode.classList.add("open"); // 默认展开
+    childrenContainer.append(trunkNode);
+  }
+
+  // Only render variants section if data exists
+  if (data.variants && data.variants.length > 0) {
+    const variantHead = makeRow("变体分支", [el("span", { class: "badge" }, `${data.variants.length} 类`)]);
+    const variantChildren = data.variants.map(v => {
+      const vRow = makeRow(`变体 <strong>${hl(v.key, q)}</strong> <span class="muted">（${hl(v.label || "", q)}）</span>`, [el("span", { class: "badge" }, `${(v.words || []).length} 词`)]);
+      const wNodes = (v.words || []).map(w => makeNode(makeRow(`<code>${hl(w.w, q)}</code> <span class="muted">— ${hl(w.zh || "", q)}</span>`, [w.hint ? el("span", { class: "tag" }, w.hint) : ""], true).row));
+      const vNode = makeNode(vRow.row, wNodes);
+      vNode.classList.add("open"); // 默认展开
+      return vNode;
+    });
+    const variantNode = makeNode(variantHead.row, variantChildren);
+    variantNode.classList.add("open"); // 默认展开
+    childrenContainer.append(variantNode);
+  }
+
+  container.append(rootNode);
+}
+
+function buildFamilyCard(data, q=""){
+  // 重构为单个卡片
+  const card = el('div', { 
+    class: 'card card-draggable', 
+    dataset: { key: data.root.key } 
+  });
+
+  // 1. 创建卡片头部
+  const cardHeader = el('div', { class: 'card-header' });
+  renderMeta(cardHeader, data.root, q);
+  card.append(cardHeader);
+
+  // 2. 创建卡片内容 (树)
+  const cardContent = el('div', { class: 'card-content' });
+  const treeDiv = el('div', { class: 'tree' });
+  renderTree(treeDiv, data, q);
+  cardContent.append(treeDiv);
+  card.append(cardContent);
+  
+  return card;
+}
+
+/* =================== 交互 & 状态 =================== */
+const state = {
+  layout: localStorage.getItem('layout') || 'grid',
+  density: localStorage.getItem('density') || 'cozy',
+  // 更新默认值为 384
+  colW: parseInt(localStorage.getItem('colW') || '384', 10),
+  drag: localStorage.getItem('drag') || 'off',
+  order: JSON.parse(localStorage.getItem('order') || '[]'),
+  query: localStorage.getItem('query') || ''
+};
+
+function applyStateToDOM(){
+  document.body.dataset.layout = state.layout;
+  document.body.dataset.density = state.density;
+  document.body.dataset.drag = state.drag;
+  document.documentElement.style.setProperty('--colW', state.colW + 'px');
+  $('#colWidth').value = state.colW; $('#colWidthVal').textContent = state.colW + 'px';
+  $('#q').value = state.query;
+  $('#btnGrid').dataset.active = String(state.layout==='grid');
+  $('#btnScroll').dataset.active = String(state.layout==='scroll');
+  $('#btnCozy').dataset.active = String(state.density==='cozy');
+  $('#btnCompact').dataset.active = String(state.density==='compact');
+  $('#toggleDrag').textContent = state.drag==='on' ? '拖拽开' : '拖拽关';
+  
+  // 拖拽属性现在由 JS API 和 .card-draggable class 控制
+  $$('.card').forEach(col => {
+    col.draggable = state.drag === 'on';
+  });
+}
+
+function persist(){
+  localStorage.setItem('layout', state.layout);
+  localStorage.setItem('density', state.density);
+  localStorage.setItem('colW', String(state.colW));
+  localStorage.setItem('drag', state.drag);
+  localStorage.setItem('order', JSON.stringify(state.order));
+  localStorage.setItem('query', state.query);
+}
+
+function reorderDataByState(data){
+  if(!state.order.length) return data;
+  const map = new Map(data.map((d,i)=>[d.root.key, d]));
+  const ordered = [];
+  state.order.forEach(k=>{ if(map.has(k)) { ordered.push(map.get(k)); map.delete(k);} });
+  return ordered.concat(Array.from(map.values()));
+}
+
+function renderAll(q = "") {
+  vocabContainer.innerHTML = ""; // 使用新 ID
+  const currentData = reorderDataByState(allData);
+  currentData.forEach(d => vocabContainer.append(buildFamilyCard(d, q))); // 使用新 ID
+  applyStateToDOM(); // Ensure draggable state is applied after rendering
+}
+
+function expandAll(){ 
+  $$('.node').forEach(n=>n.classList.add('open')); 
+  $$('details').forEach(d=>d.open=true);
+}
+function collapseAll(){ 
+  $$('.node:not(.root)').forEach(n=>n.classList.remove('open')); 
+  $$('details').forEach(d=>d.open=false);
+}
+
+/* =================== 拖拽功能 (更新) =================== */
+function initDragAndDrop() {
+    let placeholder = null;
+    let dragging = null;
+
+    vocabContainer.addEventListener('dragstart', e => {
+        if (state.drag !== 'on') return;
+        const target = e.target.closest('.card'); // 目标是 .card
+        if (!target) return;
+        
+        dragging = target;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', target.dataset.key || '');
+
+        setTimeout(() => {
+            dragging.style.opacity = '0.5';
+        }, 0);
+        
+        placeholder = document.createElement('div');
+        // 使用新 CSS 定义的 ghost class
+        placeholder.className = 'card sortable-ghost'; 
+        placeholder.style.height = target.getBoundingClientRect().height + 'px';
+        placeholder.style.width = getComputedStyle(target).width;
+    });
+
+    vocabContainer.addEventListener('dragover', e => {
+        e.preventDefault();
+        if (!dragging) return;
+        // 寻找 .card, 排除 dragging 自身和 placeholder
+        const after = [...vocabContainer.children].find(c => c !== dragging && !c.classList.contains('sortable-ghost') && e.clientX <= (c.getBoundingClientRect().left + c.getBoundingClientRect().width / 2));
+        if (after) {
+            vocabContainer.insertBefore(placeholder, after);
+        } else {
+            vocabContainer.appendChild(placeholder);
+        }
+    });
+
+    vocabContainer.addEventListener('drop', e => {
+        e.preventDefault();
+        if (!dragging || !placeholder) return;
+        vocabContainer.insertBefore(dragging, placeholder);
+    });
+
+    vocabContainer.addEventListener('dragend', e => {
+        if (!dragging) return;
+        dragging.style.opacity = '1';
+        placeholder?.remove();
+        placeholder = null;
+        dragging = null;
+
+        // 更新 state.order
+        state.order = [...vocabContainer.querySelectorAll('.card:not(.sortable-ghost)')].map(n => n.dataset.key).filter(Boolean);
+        persist();
+    });
+}
+
+/* =================== 事件绑定 =================== */
+function debounce(fn, wait=180){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), wait); }; }
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderAll(state.query);
+  expandAll();
+  initDragAndDrop(); // Initialize drag and drop listeners once
+
+  // 点击展开/折叠 (树节点)
+  vocabContainer.addEventListener('click', e => {
+    const toggle = e.target.closest('.toggle');
+    if (toggle && !toggle.classList.contains('leaf')) {
+      toggle.closest('.node').classList.toggle('open');
+    }
+  });
+  
+  // 键盘可访问性（Enter / Space）(树节点)
+  vocabContainer.addEventListener('keydown', e => {
+    if((e.key==='Enter'||e.key===' ') && e.target.classList.contains('toggle')){
+      e.preventDefault(); e.target.closest('.node').classList.toggle('open');
+    }
+  });
+
+  // 搜索（带防抖 & 高亮）
+  $('#q').addEventListener('input', debounce(e => {
+    state.query = e.target.value.trim();
+    persist();
+    renderAll(state.query);
+    expandAll();
+  }, 150));
+
+  // 布局
+  $('#btnGrid').addEventListener('click', ()=>{ state.layout='grid'; persist(); applyStateToDOM(); });
+  $('#btnScroll').addEventListener('click', ()=>{ state.layout='scroll'; persist(); applyStateToDOM(); });
+
+  // 密度
+  $('#btnCozy').addEventListener('click', ()=>{ state.density='cozy'; persist(); applyStateToDOM(); });
+  $('#btnCompact').addEventListener('click', ()=>{ state.density='compact'; persist(); applyStateToDOM(); });
+
+  // 列宽
+  $('#colWidth').addEventListener('input', e=>{
+    state.colW = parseInt(e.target.value,10);
+    document.documentElement.style.setProperty('--colW', state.colW + 'px');
+    $('#colWidthVal').textContent = state.colW + 'px';
+  });
+  $('#colWidth').addEventListener('change', ()=>{ persist(); });
+
+  // 拖拽开关
+  $('#toggleDrag').addEventListener('click', ()=>{
+    state.drag = (state.drag==='on')?'off':'on';
+    persist(); 
+    applyStateToDOM();
+  });
+
+  // 展开/折叠
+  $('#expandAll').onclick = expandAll;
+  $('#collapseAll').onclick = collapseAll;
+
+  /* --- 新增事件 --- */
+  
+  // 模态框关闭
+  $('#closeErrorModal').addEventListener('click', hideErrorModal);
+  $('#errorModal').addEventListener('click', e => {
+    // 点击背景关闭
+    if (e.target === $('#errorModal')) hideErrorModal();
+  });
+
+  // 粘贴按钮点击
+  $('#pasteData').addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text || text.trim().length === 0) {
+        showErrorModal("剪贴板为空。", "粘贴提示");
+        return;
+      }
+
+      let parsedData;
+      try {
+        // 使用 Function 构造函数来解析 JS 对象字面量
+        // 这是为了处理用户示例中带注释和非标准 JSON 的格式
+        const cleanText = text.replace(/\/\/.*$/gm, '').trim(); // 移除行注释并去除首尾空格
+        let evalText = cleanText;
+        if (!cleanText.startsWith('[')) {
+            // 如果粘贴的文本不是以 [ 开头（例如只是一个或多个JS对象），则包裹它
+            evalText = '[' + cleanText + ']';
+        }
+        parsedData = new Function("return " + evalText)();
+      } catch (parseErr) {
+        console.error("Parsing error:", parseErr);
+        throw new Error("解析数据失败。请确保粘贴的内容是有效的 JavaScript 对象数组格式（如示例数据）。");
+      }
+
+      if (!Array.isArray(parsedData) || parsedData.length === 0) {
+        throw new Error("数据格式无效。需要一个包含词根对象的数组。");
+      }
+      
+      // 简单验证数据结构
+      if (!parsedData[0].root || !parsedData[0].root.key) {
+         throw new Error("数据结构不匹配。缺少 'root.key' 字段。");
+      }
+
+      // 成功解析，替换现有数据
+      allData.length = 0; // 清空原数组
+      Array.prototype.push.apply(allData, parsedData); // 添加新数据
+      
+      // 重置顺序并重绘
+      state.order = allData.map(d => d.root.key);
+      persist();
+      renderAll(state.query);
+      expandAll();
+
+    } catch (err) {
+      showErrorModal(err.message || "粘贴时发生未知错误。", "粘贴失败");
+    }
+  });
+});
+</script>
+</body>
+</html>
