@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>【根据输入单词自动生成的总结性标题】</title>
+    <!-- TailwindCSS 已移除，因为新样式不依赖它 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <style>
+        :root {
+            /* Dark Theme (Default) */
+            --bg: #0f1115; --panel: #161a22; --panel2: #121722; --text: #e6e7ea; --muted: #9aa3b2;
+            --border: #242a36; --accent: #7aa2ff; --hl: #2a3b63; --ok: #50fa7b;
+            --shadow: rgba(0, 0, 0, 0.2);
+            --code-bg: #111826; --code-border: #222a3f;
+            --toggle-bg: #162036; --toggle-border: #2b3750; --toggle-text: #cfd8ff;
+            --badge-bg: #1a2233; --badge-border: #2b3750; --badge-text: #cdd7ff;
+            --tag-bg: #192033; --tag-border: #26304b; --tag-text: #cbd5e1;
+            --pill-bg: #172033; --pill-border: #2b3750; --pill-text: #cfe4ff;
+            --focus: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+            --colW: 384px; /* 可通过滑块动态调节 (默认 384px) */
+            --radius: 12px;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                /* Light Theme */
+                --bg: #f8f9fa; --panel: #ffffff; --panel2: #f1f3f5; --text: #212529; --muted: #6c757d;
+                --border: #dee2e6; --accent: #0d6efd; --hl: #cfe2ff; --ok: #198754;
+                --shadow: rgba(0, 0, 0, 0.06);
+                --code-bg: #e9ecef; --code-border: #ced4da;
+                --toggle-bg: #e9ecef; --toggle-border: #ced4da; --toggle-text: #495057;
+                --badge-bg: #e7f5ff; --badge-border: #a5d8ff; --badge-text: #0d6efd;
+                --tag-bg: #f1f3f5; --tag-border: #dee2e6; --tag-text: #495057;
+                --pill-bg: #e9ecef; --pill-border: #ced4da; --pill-text: #343a40;
+            }
+        }
+
+        * { box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            /* 使用 Noto Sans SC 作为备用 */
+            font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* =================== 顶部工具栏 =================== */
+        header {
+            position: sticky; top: 0; z-index: 20;
+            background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 86%, transparent) 0%, transparent 100%);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+        }
+        header .wrap { max-width: 1800px; margin: 0 auto; padding: 14px 16px; }
+        header h1 { font-size: 20px; margin: 0 0 8px 0; font-weight: 700; letter-spacing: .3px; }
+
+        header .toolbar { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+        header .tools { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+        header input[type="search"] {
+            width: 100%; min-width: 240px; padding: 10px 14px; border-radius: 10px;
+            border: 1px solid var(--border); background: var(--panel2); color: var(--text); outline: none;
+            transition: box-shadow .2s, border-color .2s; box-shadow: none;
+        }
+        header input[type="search"]:focus { border-color: var(--accent); box-shadow: var(--focus); }
+
+        header .btn {
+            padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border);
+            background: var(--panel); color: var(--text); cursor: pointer; font-weight: 600; font-size: 13px;
+            transition: transform .08s ease, border-color .2s, color .2s, background-color .2s;
+            user-select: none; white-space: nowrap;
+        }
+        header .btn:hover { border-color: var(--accent); color: var(--accent); }
+        header .btn:active { transform: translateY(1px); }
+        header .btn[data-active="true"] { 
+            outline: none; border-color: var(--accent); 
+            /* 激活状态使用高亮色 */
+            background: var(--hl); color: var(--accent);
+        }
+
+        header .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+        header .seg .btn { border: none; border-right: 1px solid var(--border); border-radius: 0; padding: 8px 12px; }
+        header .seg .btn:last-child { border-right: none; }
+        header .seg .btn[data-active="true"] {
+            background: var(--accent); color: var(--bg); border-color: var(--accent);
+        }
+
+
+        header .slider { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); }
+        header .slider input { accent-color: var(--accent); }
+        header .hint { color: var(--muted); font-size: 12px; }
+        header #colWidthVal { width: 45px; text-align: right; }
+
+        /* =================== 主区布局（两种模式：横向轮播 / 自适应网格） =================== */
+        main {
+            max-width: 1800px; margin: 12px auto 80px; padding: 0 16px;
+            gap: 24px; align-items: start;
+        }
+
+        /* 适配： vocab-container 是卡片组的容器 */
+        /* 轮播模式 */
+        body[data-layout="scroll"] #vocab-container {
+            display: flex; overflow-x: auto; gap: 24px; align-items: start;
+            scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; -ms-overflow-style: none;
+        }
+        body[data-layout="scroll"] #vocab-container::-webkit-scrollbar { display: none; }
+        body[data-layout="scroll"] #vocab-container .card { 
+            flex: 0 0 var(--colW); 
+            scroll-snap-align: start; 
+            width: var(--colW);
+        }
+
+        /* 网格模式 */
+        body[data-layout="grid"] #vocab-container { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--colW)), 1fr)); 
+            gap: 24px;
+        }
+        body[data-layout="grid"] #vocab-container .card { width: 100%; }
+
+
+        /* =================== 卡片样式 =================== */
+        .card {
+            background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+            box-shadow: 0 8px 20px var(--shadow); 
+            transition: box-shadow .2s ease, transform .15s ease, border-color .2s;
+            overflow: hidden; /* 确保圆角裁切 */
+        }
+        .card:hover { box-shadow: 0 12px 28px var(--shadow); }
+        
+        /* 搜索高亮和隐藏 */
+        .card.highlight {
+            border-color: var(--accent);
+            box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 20%, transparent);
+        }
+        .card.hidden { display: none; }
+        
+        /* 卡片内部组件样式 */
+        .card-header { padding: 20px; border-bottom: 1px solid var(--border); }
+        .card-content { padding: 20px; }
+        
+        /* 密度：紧凑 / 舒适 */
+        body[data-density="compact"] .card-header,
+        body[data-density="compact"] .card-content { padding: 14px 16px; }
+        body[data-density="cozy"] .card-header,
+        body[data-density="cozy"] .card-content { padding: 20px 24px; }
+        body[data-density="compact"] details > summary { padding: 10px 12px; }
+        body[data-density="cozy"] details > summary { padding: 16px; }
+
+        .section-title { font-size: 1.25rem; font-weight: 700; color: var(--text); }
+        h2.text-2xl { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+        .text-gray-500 { color: var(--muted); }
+        
+        details > summary {
+            cursor: pointer;
+            background-color: var(--panel2);
+            border-radius: 8px;
+            font-weight: 600;
+            color: var(--text);
+            transition: background-color 0.2s ease;
+            list-style: none;
+            margin-top: 8px;
+        }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary::before {
+            content: '▶';
+            margin-right: 10px;
+            font-size: 0.8em;
+            transition: transform 0.2s ease-in-out;
+        }
+        details[open] > summary::before { transform: rotate(90deg); }
+        details[open] > summary { background-color: color-mix(in srgb, var(--panel) 80%, var(--panel2)); }
+        
+        .details-content { 
+            padding: 16px; 
+            border-top: 1px solid var(--border); 
+            margin-top: 8px;
+        }
+        body[data-density="compact"] .details-content { padding: 12px; }
+        
+        .pron-btn {
+            cursor: pointer; display: inline-flex; align-items: center;
+            padding: 4px 8px; border-radius: 6px;
+            background-color: var(--panel2);
+            border: 1px solid var(--border);
+            font-size: 0.9rem; font-weight: 500;
+            color: var(--muted);
+            transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+        }
+        .pron-btn:hover { background-color: var(--hl); border-color: var(--accent); color: var(--accent); }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid var(--border); padding: 12px; text-align: left; }
+        th { background-color: var(--panel2); font-weight: 600; }
+        
+        .quiz-item { margin-top: 1rem; padding: 1rem; background: var(--panel2); border-radius: 8px; }
+        .quiz-option { margin: 0.5rem 0; }
+        
+        .chip{
+            display:inline-block; padding: 2px 8px; border-radius: 999px;
+            font-size: 12px; line-height: 1.6; margin-right: 6px;
+            color: var(--badge-text); background: var(--badge-bg); border: 1px solid var(--badge-border);
+        }
+        /* 保持CEFR颜色 */
+        .chip.cefr-B1{background:#eef2ff;border-color:#c7d2fe;color:#4338ca;}
+        .chip.cefr-B2{background:#e0f2fe;border-color:#bae6fd;color:#0369a1;}
+        .chip.cefr-C1{background:#f0fdf4;border-color:#bbf7d0;color:#15803d;}
+        .chip.cefr-C2{background:#fefce8;border-color:#fde047;color:#854d0e;}
+        @media (prefers-color-scheme: dark) {
+            .chip.cefr-B1{background:#3730a3;border-color:#4f46e5;color:#e0e7ff;}
+            .chip.cefr-B2{background:#0c4a6e;border-color:#0ea5e9;color:#e0f2fe;}
+            .chip.cefr-C1{background:#166534;border-color:#22c55e;color:#dcfce7;}
+            .chip.cefr-C2{background:#713f12;border-color:#eab308;color:#fefce8;}
+        }
+
+        /* 拖拽占位 */
+        .sortable-ghost { 
+            opacity: 0.4; 
+            background: var(--hl); 
+            border: 2px dashed var(--accent);
+            border-radius: var(--radius);
+        }
+        .card-draggable { cursor: grab; }
+        .card-draggable:active { cursor: grabbing; }
+
+        /* 总表样式 */
+        #summary-container .card {
+             background: var(--panel);
+        }
+        #summary-container .section-title {
+            padding: 10px 0;
+            color: var(--text);
+        }
+        #summary-container details > summary {
+            background: var(--panel);
+        }
+        #summary-container details[open] > summary {
+             background: var(--panel);
+        }
+        #summary-container .details-content {
+            padding: 0;
+            border-top: none;
+        }
+        #summary-container table {
+            margin-top: 0;
+            border: none;
+        }
+         #summary-container th, #summary-container td {
+            border-color: var(--border);
+         }
+         #summary-container th {
+            background-color: var(--panel2);
+            color: var(--text);
+         }
+         #summary-container tr:nth-child(even) {
+            background-color: var(--panel2);
+         }
+         #summary-container tr:nth-child(odd) {
+            background-color: var(--panel);
+         }
+
+
+        /* 打印样式 */
+        @media print{
+            body{ background:#fff; font-size: 10pt; color: #000; }
+            header { display: none !important; }
+            .card{ box-shadow:none; border:1px solid #dee2e6; page-break-inside: avoid; background: #fff; }
+            details{ border:none; }
+            details[open] { page-break-inside: avoid; }
+            summary::before { display: none; }
+            .pron-btn, footer, script, #summary-container { display:none !important; }
+            #vocab-container { display: block; } 
+            body[data-layout="grid"] #vocab-container { display: block; }
+            #vocab-container .card { width: 100% !important; }
+            h1, h2, h3 { font-size: 1.2em; color: #000; }
+            a { text-decoration: none; color: black; }
+        }
+        
+        /* 模态框样式 */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000; opacity: 0; transition: opacity .2s; pointer-events: none;
+        }
+        .modal-overlay[data-visible="true"] { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: var(--panel); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 24px 30px;
+            max-width: 400px; width: 90%;
+            box-shadow: 0 10px 30px var(--shadow);
+            transform: scale(0.95); transition: transform .2s;
+        }
+        .modal-overlay[data-visible="true"] .modal-content { transform: scale(1); }
+        .modal-content h3 { margin-top: 0; color: var(--accent); }
+        .modal-content p { color: var(--text); }
+        .modal-content #closeErrorModal { 
+            margin-top: 20px; 
+            background: var(--accent); 
+            color: var(--bg); 
+            border-color: var(--accent); 
+            width: 100%;
+            padding: 10px;
+            font-weight: 700;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .modal-content #closeErrorModal:hover { background: color-mix(in srgb, var(--accent) 80%, white); }
+    </style>
+</head>
+<!-- ✅ 修改：默认使用 data- 属性 -->
+<body data-layout="scroll" data-density="compact">
+
+    <!-- ✅ 新增：替换为新 Header -->
+    <header>
+      <div class="wrap">
+        <h1>词汇学习卡</h1>
+        <div class="toolbar">
+          <input id="q" type="search" placeholder="🔎 搜索词汇 (例如: lucid)" aria-label="搜索词汇">
+          <div class="tools" role="group" aria-label="视图与操作">
+            <div class="seg" aria-label="布局切换">
+              <button class="btn" id="btnGrid" title="自适应网格">网格</button>
+              <button class="btn" id="btnScroll" data-active="true" title="横向轮播">轮播</button>
+            </div>
+            <div class="seg" aria-label="密度切换">
+              <button class="btn" id="btnCozy" title="舒适">舒适</button>
+              <button class="btn" id="btnCompact" data-active="true" title="紧凑">紧凑</button>
+            </div>
+            <div class="slider" title="列宽">
+              <span class="hint">列宽</span>
+              <input id="colWidth" type="range" min="320" max="640" step="10" value="384">
+              <span id="colWidthVal" class="hint">384px</span>
+            </div>
+            <button class="btn" id="pasteData" title="从剪贴板粘贴新的词汇数据">📋 粘贴数据</button>
+            <button class="btn" id="toggleDrag" title="拖拽重排（开启后可拖动每一列进行排序）">拖拽关</button>
+            <button class="btn" id="expandAll" title="展开全部">全部展开</button>
+            <button class="btn" id="collapseAll" title="折叠全部">全部折叠</button>
+            <!-- ✅ 新增：词根比较按钮 -->
+            <a href="https://flyingparanoia.github.io/Vocabulary/" target="_blank" class="btn" title="跳转到词根比较工具" style="text-decoration: none;">词根比较</a>
+          </div>
+        </div>
+      </div>
+    </header>
+    <!-- ✅ Header 结束 -->
+
+    <!-- ✅ 修改：使用 <main> 标签 -->
+    <main>
+        <!-- ✅ 新增：错误信息提示框 (Modal) -->
+        <div id="errorModal" class="modal-overlay" data-visible="false">
+            <div class="modal-content">
+                <h3></h3>
+                <p id="errorMessage"></p>
+                <button id="closeErrorModal">关闭</button>
+            </div>
+        </div>
+        
+        <div id="summary-container" class="mb-6">
+            <!-- Summary table will be injected here -->
+        </div>
+
+        <div id="vocab-container">
+            <!-- Vocabulary cards will be injected here by JavaScript -->
+        </div>
+
+        <footer class="mt-12 text-center text-sm" style="color: var(--muted);">
+             <div class="card" style="background: var(--panel); border-color: var(--border);">
+                 <div class="card-content">
+                     <h3 class="section-title" style="color: var(--text);">🔚 引用与可靠性说明</h3>
+                     <p class="mb-2"><strong>参考词典：</strong></p>
+                     <ul class="list-disc list-inside mb-4">
+                         <li>Oxford English Dictionary (OED)</li>
+                         <li>Merriam-Webster Collegiate Dictionary</li>
+                         <li>Cambridge Advanced Learner's Dictionary</li>
+                     </ul>
+                     <p class="mb-2"><strong>文本来源：</strong></p>
+                     <ul class="list-disc list-inside">
+                         <li>影视例句主要来源于 IMDb、Subzin 等公开数据库，并经过语境核实。</li>
+                         <li>文学例句来源于 Project Gutenberg 及其他公共领域文学作品库。</li>
+                         <li>所有例句与搭配均经过语料库（如 COCA, BNC）交叉验证，确保其典型性与准确性。</li>
+                     </ul>
+                 </div>
+             </div>
+        </footer>
+    </main>
+
+    <script>
+        const summaryContainer = document.getElementById('summary-container');
+        const container = document.getElementById('vocab-container');
+        
+        // ✅ 修改：获取新 Header 中的元素
+        const pasteButton = document.getElementById('pasteData');
+        const searchInput = document.getElementById('q');
+        const btnGrid = document.getElementById('btnGrid');
+        const btnScroll = document.getElementById('btnScroll');
+        const btnCozy = document.getElementById('btnCozy');
+        const btnCompact = document.getElementById('btnCompact');
+        const colWidthSlider = document.getElementById('colWidth');
+        const colWidthVal = document.getElementById('colWidthVal');
+        const toggleDragBtn = document.getElementById('toggleDrag');
+        const expandAllBtn = document.getElementById('expandAll');
+        const collapseAllBtn = document.getElementById('collapseAll');
+        
+        // ✅ 修改：获取 Modal 元素
+        const errorModal = document.getElementById('errorModal');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorModalTitle = errorModal.querySelector('h3');
+        const closeErrorModalBtn = document.getElementById('closeErrorModal');
+
+        let sortableInstance = null; // ✅ 用于保存 Sortable 实例
+
+        // ✅ 新增：显示错误信息
+        function showError(message, title = "加载失败") {
+            errorMessage.textContent = message;
+            errorModalTitle.textContent = title;
+            errorModal.dataset.visible = 'true';
+        }
+        // ✅ 新增：隐藏错误信息
+        function clearError() {
+            errorModal.dataset.visible = 'false';
+        }
+        // ✅ 新增：关闭 Modal
+        closeErrorModalBtn.addEventListener('click', clearError);
+        errorModal.addEventListener('click', (e) => {
+            if (e.target === errorModal) {
+                clearError();
+            }
+        });
+
+
+        // ... 现有的 createFullComparisonTable, createQuiz, renderCard, playSound 函数 ...
+        const createFullComparisonTable = (allWords) => {
+            // ... (函数内容不变) ...
+            const comparisonItems = allWords.flatMap(wordData => wordData.analysis.comparison);
+            let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full">
+                <thead>
+                    <tr>
+                        <th>单词</th>
+                        <th>基本义</th>
+                        <th>典型语境</th>
+                        <th class="hidden md:table-cell">文体色彩</th>
+                        <th>常见搭配</th>
+                        <th class="hidden lg:table-cell">易混点说明</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+            comparisonItems.forEach(item => {
+                tableHTML += `<tr>
+                    <td class="font-semibold">${item.word}</td>
+                    <td>${item.meaning}</td>
+                    <td>${item.context}</td>
+                    <td class="hidden md:table-cell">${item.color}</td>
+                    <td>${item.collocations}</td>
+                    <td class="hidden lg:table-cell">${item.notes}</td>
+                </tr>`;
+            });
+            tableHTML += `</tbody></table></div>`;
+            return tableHTML;
+        };
+
+        const createQuiz = (quizItems, word) => {
+             // ... (函数内容不变) ...
+             return quizItems.map((item, index) => `
+                <div class="quiz-item">
+                    <p class="font-semibold"><strong>Q${index + 1}.</strong> ${item.q}</p>
+                    <p class="text-sm" style="color: var(--muted);">${item.t}</p>
+                    <div class="my-2 text-sm">
+                        ${item.o.map(opt => `<label class="block quiz-option"><input type="radio" name="quiz-${word}-${index}" value="${opt}" class="mr-2">${opt}</label>`).join('')}
+                    </div>
+                    <details class="text-sm">
+                        <summary style="background: var(--panel); border: 1px solid var(--border); color: var(--accent); padding: 8px 12px; font-weight: 500;">查看答案与解析</summary>
+                        <div class="details-content" style="background: var(--panel); border-top: none; margin-top: 0; border-radius: 0 0 8px 8px;">
+                            <p>✅ <strong>答案：</strong> ${item.a}</p>
+                            <p><strong>解析：</strong> ${item.r}</p>
+                        </div>
+                    </details>
+                </div>`).join('');
+        };
+
+        const renderCard = (item) => {
+            // ... (函数内容不变, 移除 Tailwind 类) ...
+            const { word, ipa_uk, ipa_us, analysis } = item;
+            return `
+                <div class="card card-draggable" id="${word}" data-word="${word.toLowerCase()}">
+                    <div class="card-header">
+                        <h2 class="text-2xl">${word}</h2>
+                        <div class="flex items-center space-x-4 mt-2 text-gray-500 text-sm" style="display: flex; gap: 1rem; margin-top: 0.5rem; font-size: 0.875rem;">
+                            <div><span style="font-weight: 700;">🇬🇧</span> ${ipa_uk}</div>
+                            <div><span style="font-weight: 700;">🇺🇸</span> ${ipa_us}</div>
+                        </div>
+                        <div class="mt-3" style="margin-top: 0.75rem;">
+                          <span class="chip cefr-${analysis.quick_look.cefr}">CEFR ${analysis.quick_look.cefr}</span>
+                          <span class="chip">${analysis.quick_look.pos}</span>
+                          <span class="chip">${analysis.quick_look.style}</span>
+                        </div>
+                         <div class="flex items-center space-x-2 mt-3" style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+                             <button onclick="playSound('${word}', 'uk')" class="pron-btn" aria-label="播放英音：${word}">🇬🇧 英音 🔈</button>
+                             <button onclick="playSound('${word}', 'us')" class="pron-btn" aria-label="播放美音：${word}">🇺🇸 美音 🔈</button>
+                         </div>
+                    </div>
+                    <div class="card-content space-y-3" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <details open>
+                            <summary>🟦 【词汇速览卡】</summary>
+                            <div class="details-content">
+                                <ul class="list-disc list-inside space-y-1" style="list-style-type: disc; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem;">
+                                    <li><strong>核心义:</strong> ${analysis.quick_look.meaning}</li>
+                                    <li><strong>常见搭配:</strong> ${analysis.quick_look.collocations}</li>
+                                </ul>
+                            </div>
+                        </details>
+                        <details open>
+                            <summary>🟩 【构词与词源】</summary>
+                             <div class="details-content text-sm space-y-1" style="font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.25rem;">
+                                 <p><strong>演变:</strong> ${analysis.etymology.path}</p>
+                                 <p><strong>分析:</strong> ${analysis.etymology.breakdown}</p>
+                                 <p><strong>同源:</strong> ${analysis.etymology.cognates}</p>
+                             </div>
+                        </details>
+                        <details open>
+                            <summary>🟥 【影视与文学例证】</summary>
+                            <div class="details-content space-y-4" style="display: flex; flex-direction: column; gap: 1rem;">
+                                ${analysis.examples.map(ex => `
+                                    <figure class="p-3" style="background: var(--panel2); border-radius: 8px; padding: 0.75rem;">
+                                        <blockquote class="pl-4 border-l-4" style="padding-left: 1rem; border-left: 4px solid var(--border); margin: 0.25rem 0; font-size: 0.9rem;">
+                                            <p style="font-style: italic;">"${ex.sentence}"</p>
+                                            <p>"${ex.translation}"</p>
+                                        </blockquote>
+                                        <figcaption class="text-xs mt-2" style="font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem;">
+                                          — ${ex.type === 'movie' ? '🎬' : '📖'} <em style="font-style: italic;">${ex.source}</em>
+                                          <p class="mt-1" style="margin-top: 0.25rem;"><strong>语境:</strong> ${ex.context}</p>
+                                        </figcaption>
+                                    </figure>
+                                `).join('')}
+                            </div>
+                        </details>
+                        <details open>
+                            <summary>🟫 【典型搭配与语块】</summary>
+                             <div class="details-content">
+                                 <ul class="list-disc list-inside space-y-1" style="list-style-type: disc; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem;">
+                                     ${analysis.collocations_list.map(c => `<li>${c}</li>`).join('')}
+                                 </ul>
+                             </div>
+                        </details>
+                        <details open>
+                            <summary>⬜ 【易混与边界词】</summary>
+                            <div class="details-content text-sm" style="font-size: 0.9rem;"><p>${analysis.contrast.text}</p></div>
+                        </details>
+                        <details open>
+                            <summary>🟩 【小练习题】</summary>
+                             <div class="details-content">${createQuiz(analysis.quiz, word)}</div>
+                        </details>
+                    </div>
+                </div>
+            `;
+        };
+
+        function playSound(word, region) {
+            // ... (函数内容不变) ...
+            const lang = region === 'uk' ? 'en-GB' : 'en-US';
+            const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(word)}&tl=${lang}&client=tw-ob`;
+            const audio = new Audio(url);
+            audio.play().catch(error => {
+                console.error("Audio playback failed:", error)
+                showError('音频播放失败，可能是网络问题或浏览器限制。', '播放失败');
+            });
+        }
+        
+        function initializeVocabularyApp(vocabularyData) {
+            if (!Array.isArray(vocabularyData) || vocabularyData.length === 0) {
+                showError('数据格式不正确或为空。');
+                return;
+            }
+            
+            summaryContainer.innerHTML = '';
+            container.innerHTML = '';
+            clearError();
+
+            try {
+                // 1. 渲染总表
+                const fullComparisonSection = `
+                    <div class="card">
+                        <div class="card-content">
+                            <details open>
+                                <summary class="section-title">🟨 【所有词汇语义对比总表】</summary>
+                                <div class="details-content">
+                                    ${createFullComparisonTable(vocabularyData)}
+                                </div>
+                            </details>
+                        </div>
+                    </div>`;
+                summaryContainer.innerHTML = fullComparisonSection;
+
+                // 2. 渲染所有卡片
+                const allCardsHTML = vocabularyData.map(renderCard).join('');
+                container.innerHTML = allCardsHTML;
+
+                // 3. 初始化 SortableJS
+                if (sortableInstance) {
+                    sortableInstance.destroy();
+                }
+                sortableInstance = new Sortable(container, {
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    draggable: '.card-draggable', // 确保只拖动卡片
+                    disabled: true, // ✅ 默认禁用
+                });
+                
+                // 4. 更新拖动按钮的初始状态
+                toggleDragBtn.textContent = '拖拽关';
+                toggleDragBtn.dataset.active = 'false';
+
+            } catch (error) {
+                console.error("Error rendering vocabulary app:", error);
+                showError(`渲染时出错: ${error.message}`, '渲染失败');
+            }
+        }
+
+        // ✅ 修改：为“粘贴”按钮添加事件监听器
+        pasteButton.addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (!text) {
+                    showError('剪贴板为空。');
+                    return;
+                }
+                try {
+                    const data = JSON.parse(text);
+                    initializeVocabularyApp(data);
+                } catch (jsonError) {
+                    console.error("Invalid JSON:", jsonError);
+                    showError(`JSON 格式无效。请确保粘贴的是正确的 JSON 数组。 ${jsonError.message}`);
+                    summaryContainer.innerHTML = '';
+                    container.innerHTML = '';
+                }
+            } catch (clipboardError) {
+                console.error("Clipboard read failed:", clipboardError);
+                showError('无法读取剪贴板。请确保已授予浏览器剪贴板权限。', '权限不足');
+            }
+        });
+        
+        // ✅ 新增：为新工具栏按钮添加事件监听器
+
+        // 搜索
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            const cards = document.querySelectorAll('#vocab-container .card');
+            cards.forEach(card => {
+                const word = card.dataset.word || '';
+                // 搜索卡片内的所有文本内容
+                const cardText = card.textContent || card.innerText;
+                const isMatch = word.includes(query) || cardText.toLowerCase().includes(query);
+                card.classList.toggle('hidden', !isMatch); // 隐藏不匹配的
+                card.classList.toggle('highlight', query && isMatch); // 高亮匹配的
+            });
+        });
+
+        // 布局切换
+        btnGrid.addEventListener('click', () => {
+            document.body.dataset.layout = 'grid';
+            btnGrid.dataset.active = 'true';
+            btnScroll.dataset.active = 'false';
+        });
+        btnScroll.addEventListener('click', () => {
+            document.body.dataset.layout = 'scroll';
+            btnScroll.dataset.active = 'true';
+            btnGrid.dataset.active = 'false';
+        });
+
+        // 密度切换
+        btnCozy.addEventListener('click', () => {
+            document.body.dataset.density = 'cozy';
+            btnCozy.dataset.active = 'true';
+            btnCompact.dataset.active = 'false';
+        });
+        btnCompact.addEventListener('click', () => {
+            document.body.dataset.density = 'compact';
+            btnCompact.dataset.active = 'true';
+            btnCozy.dataset.active = 'false';
+        });
+
+        // 列宽滑块
+        colWidthSlider.addEventListener('input', (e) => {
+            const width = e.target.value;
+            document.documentElement.style.setProperty('--colW', `${width}px`);
+            colWidthVal.textContent = `${width}px`;
+        });
+        // 初始化滑块值
+        (function() {
+             const initialWidth = colWidthSlider.value;
+             document.documentElement.style.setProperty('--colW', `${initialWidth}px`);
+             colWidthVal.textContent = `${initialWidth}px`;
+        })();
+
+
+        // 拖拽开关
+        toggleDragBtn.addEventListener('click', () => {
+            if (!sortableInstance) {
+                showError('请先粘贴数据以加载卡片。', '无内容');
+                return;
+            }
+            const isDisabled = sortableInstance.option('disabled');
+            sortableInstance.option('disabled', !isDisabled);
+            
+            if (isDisabled) { // 即将变为 "启用"
+                toggleDragBtn.textContent = '拖拽开';
+                toggleDragBtn.dataset.active = 'true';
+            } else { // 即将变为 "禁用"
+                toggleDragBtn.textContent = '拖拽关';
+                toggleDragBtn.dataset.active = 'false';
+            }
+        });
+
+        // 折叠/展开
+        expandAllBtn.addEventListener('click', () => {
+            document.querySelectorAll('details').forEach(detail => detail.open = true);
+        });
+        collapseAllBtn.addEventListener('click', () => {
+            document.querySelectorAll('details').forEach(detail => detail.open = false);
+        });
+
+    </script>
+</body>
+</html>
