@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>【根据输入单词自动生成的总结性标题】</title>
+    <title>词汇学习卡</title>
     <!-- TailwindCSS 已移除，因为新样式不依赖它 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -55,11 +55,19 @@
         header .wrap { max-width: 1800px; margin: 0 auto; padding: 14px 16px; }
         header h1 { font-size: 20px; margin: 0 0 8px 0; font-weight: 700; letter-spacing: .3px; }
 
-        header .toolbar { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+        /* ✅ 修改：调整工具栏布局 */
+        header .toolbar { 
+            display: grid; 
+            /* 布局：[粘贴按钮] [搜索框(1fr)] [右侧工具组] */
+            grid-template-columns: auto 1fr auto; 
+            gap: 10px; 
+            align-items: center; 
+        }
         header .tools { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
         header input[type="search"] {
-            width: 100%; min-width: 240px; padding: 10px 14px; border-radius: 10px;
+            width: 100%; min-width: 200px; /* 减小最小宽度 */
+            padding: 10px 14px; border-radius: 10px;
             border: 1px solid var(--border); background: var(--panel2); color: var(--text); outline: none;
             transition: box-shadow .2s, border-color .2s; box-shadow: none;
         }
@@ -78,6 +86,15 @@
             /* 激活状态使用高亮色 */
             background: var(--hl); color: var(--accent);
         }
+        /* ✅ 新增：粘贴按钮的特定高亮（绿色）*/
+        header #pasteData:hover {
+             border-color: var(--ok); color: var(--ok);
+        }
+        header #pasteData {
+            background: color-mix(in srgb, var(--ok) 15%, var(--panel));
+            border-color: color-mix(in srgb, var(--ok) 50%, var(--border));
+        }
+
 
         header .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
         header .seg .btn { border: none; border-right: 1px solid var(--border); border-radius: 0; padding: 8px 12px; }
@@ -259,6 +276,48 @@
          #summary-container tr:nth-child(odd) {
             background-color: var(--panel);
          }
+        
+        /* 响应式：调整工具栏布局 */
+        @media (max-width: 1200px) {
+            header .toolbar {
+                grid-template-columns: 1fr auto; /* 搜索框在第一行 */
+                gap: 12px;
+            }
+            header .toolbar input[type="search"] {
+                grid-column: 1 / 2; /* 搜索框占满第一行 */
+            }
+            header .toolbar #pasteData {
+                grid-column: 1 / 2; /* 粘贴按钮也放在第一行 */
+                grid-row: 1;
+                width: auto; /* 保持按钮宽度 */
+            }
+             header .toolbar input[type="search"] {
+                grid-column: 2 / 3; /* 搜索框放在第一行第二列 */
+                grid-row: 1;
+            }
+            header .tools {
+                grid-column: 1 / 3; /* 工具组占满第二行 */
+                grid-row: 2;
+                justify-content: flex-start; /* 左对齐 */
+            }
+        }
+         @media (max-width: 560px) {
+             header .toolbar {
+                grid-template-columns: 1fr; /* 单列布局 */
+             }
+             header .toolbar #pasteData {
+                grid-column: 1;
+                grid-row: 1;
+             }
+             header .toolbar input[type="search"] {
+                grid-column: 1;
+                grid-row: 2;
+             }
+             header .tools {
+                grid-column: 1;
+                grid-row: 3;
+             }
+         }
 
 
         /* 打印样式 */
@@ -317,7 +376,11 @@
       <div class="wrap">
         <h1>词汇学习卡</h1>
         <div class="toolbar">
+          <!-- ✅ 修改：粘贴按钮移到最左侧 -->
+          <button class="btn" id="pasteData" title="从剪贴板粘贴新的词汇数据">📋 粘贴数据</button>
+          
           <input id="q" type="search" placeholder="🔎 搜索词汇 (例如: lucid)" aria-label="搜索词汇">
+          
           <div class="tools" role="group" aria-label="视图与操作">
             <div class="seg" aria-label="布局切换">
               <button class="btn" id="btnGrid" title="自适应网格">网格</button>
@@ -332,7 +395,6 @@
               <input id="colWidth" type="range" min="320" max="640" step="10" value="384">
               <span id="colWidthVal" class="hint">384px</span>
             </div>
-            <button class="btn" id="pasteData" title="从剪贴板粘贴新的词汇数据">📋 粘贴数据</button>
             <button class="btn" id="toggleDrag" title="拖拽重排（开启后可拖动每一列进行排序）">拖拽关</button>
             <button class="btn" id="expandAll" title="展开全部">全部展开</button>
             <button class="btn" id="collapseAll" title="折叠全部">全部折叠</button>
@@ -363,18 +425,18 @@
             <!-- Vocabulary cards will be injected here by JavaScript -->
         </div>
 
-        <footer class="mt-12 text-center text-sm" style="color: var(--muted);">
+        <footer class="mt-12 text-center text-sm" style="color: var(--muted); margin-top: 3rem;">
              <div class="card" style="background: var(--panel); border-color: var(--border);">
                  <div class="card-content">
                      <h3 class="section-title" style="color: var(--text);">🔚 引用与可靠性说明</h3>
-                     <p class="mb-2"><strong>参考词典：</strong></p>
-                     <ul class="list-disc list-inside mb-4">
+                     <p class="mb-2" style="margin-bottom: 0.5rem;"><strong>参考词典：</strong></p>
+                     <ul class="list-disc list-inside mb-4" style="list-style-type: disc; padding-left: 1.25rem; margin-bottom: 1rem;">
                          <li>Oxford English Dictionary (OED)</li>
                          <li>Merriam-Webster Collegiate Dictionary</li>
                          <li>Cambridge Advanced Learner's Dictionary</li>
                      </ul>
-                     <p class="mb-2"><strong>文本来源：</strong></p>
-                     <ul class="list-disc list-inside">
+                     <p class="mb-2" style="margin-bottom: 0.5rem;"><strong>文本来源：</strong></p>
+                     <ul class="list-disc list-inside" style="list-style-type: disc; padding-left: 1.25rem;">
                          <li>影视例句主要来源于 IMDb、Subzin 等公开数据库，并经过语境核实。</li>
                          <li>文学例句来源于 Project Gutenberg 及其他公共领域文学作品库。</li>
                          <li>所有例句与搭配均经过语料库（如 COCA, BNC）交叉验证，确保其典型性与准确性。</li>
@@ -432,29 +494,38 @@
         const createFullComparisonTable = (allWords) => {
             // ... (函数内容不变) ...
             const comparisonItems = allWords.flatMap(wordData => wordData.analysis.comparison);
-            let tableHTML = `<div class="overflow-x-auto"><table class="min-w-full">
+            let tableHTML = `<div style="overflow-x: auto;"><table style="min-width: 100%;">
                 <thead>
                     <tr>
                         <th>单词</th>
                         <th>基本义</th>
                         <th>典型语境</th>
-                        <th class="hidden md:table-cell">文体色彩</th>
+                        <th style="display: none;" class="md:table-cell">文体色彩</th>
                         <th>常见搭配</th>
-                        <th class="hidden lg:table-cell">易混点说明</th>
+                        <th style="display: none;" class="lg:table-cell">易混点说明</th>
                     </tr>
                 </thead>
                 <tbody>`;
             comparisonItems.forEach(item => {
                 tableHTML += `<tr>
-                    <td class="font-semibold">${item.word}</td>
+                    <td style="font-weight: 600;">${item.word}</td>
                     <td>${item.meaning}</td>
                     <td>${item.context}</td>
-                    <td class="hidden md:table-cell">${item.color}</td>
+                    <td style="display: none;" class="md:table-cell">${item.color}</td>
                     <td>${item.collocations}</td>
-                    <td class="hidden lg:table-cell">${item.notes}</td>
+                    <td style="display: none;" class="lg:table-cell">${item.notes}</td>
                 </tr>`;
             });
             tableHTML += `</tbody></table></div>`;
+            
+            // 辅助媒体查询的内联脚本
+            tableHTML += `
+                <style>
+                    @media (min-width: 768px) { .md\:table-cell { display: table-cell !important; } }
+                    @media (min-width: 1024px) { .lg\:table-cell { display: table-cell !important; } }
+                </style>
+            `;
+            
             return tableHTML;
         };
 
@@ -462,13 +533,13 @@
              // ... (函数内容不变) ...
              return quizItems.map((item, index) => `
                 <div class="quiz-item">
-                    <p class="font-semibold"><strong>Q${index + 1}.</strong> ${item.q}</p>
-                    <p class="text-sm" style="color: var(--muted);">${item.t}</p>
-                    <div class="my-2 text-sm">
-                        ${item.o.map(opt => `<label class="block quiz-option"><input type="radio" name="quiz-${word}-${index}" value="${opt}" class="mr-2">${opt}</label>`).join('')}
+                    <p style="font-weight: 600;"><strong>Q${index + 1}.</strong> ${item.q}</p>
+                    <p class="text-sm" style="color: var(--muted); font-size: 0.9rem;">${item.t}</p>
+                    <div style="margin-top: 0.5rem; margin-bottom: 0.5rem; font-size: 0.9rem;">
+                        ${item.o.map(opt => `<label class="block quiz-option" style="display: block; margin-top: 0.5rem; margin-bottom: 0.5rem;"><input type="radio" name="quiz-${word}-${index}" value="${opt}" style="margin-right: 0.5rem;">${opt}</label>`).join('')}
                     </div>
-                    <details class="text-sm">
-                        <summary style="background: var(--panel); border: 1px solid var(--border); color: var(--accent); padding: 8px 12px; font-weight: 500;">查看答案与解析</summary>
+                    <details class="text-sm" style="font-size: 0.9rem;">
+                        <summary style="background: var(--panel); border: 1px solid var(--border); color: var(--accent); padding: 8px 12px; font-weight: 500; border-radius: 8px;">查看答案与解析</summary>
                         <div class="details-content" style="background: var(--panel); border-top: none; margin-top: 0; border-radius: 0 0 8px 8px;">
                             <p>✅ <strong>答案：</strong> ${item.a}</p>
                             <p><strong>解析：</strong> ${item.r}</p>
@@ -578,7 +649,7 @@
             try {
                 // 1. 渲染总表
                 const fullComparisonSection = `
-                    <div class="card">
+                    <div class="card" style="margin-bottom: 24px;">
                         <div class="card-content">
                             <details open>
                                 <summary class="section-title">🟨 【所有词汇语义对比总表】</summary>
