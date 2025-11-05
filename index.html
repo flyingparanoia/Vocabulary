@@ -1,1 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Vocabulary Carousel</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; }
+#pasteButton { margin-bottom: 20px; padding: 8px 16px; }
+#carousel { position: relative; width: 100%; min-height: 200px; border: 1px solid #ccc; padding: 20px; box-sizing: border-box; }
+.slide { display: none; }
+.slide.active { display: block; }
+.controls { margin-top: 10px; }
+</style>
+</head>
+<body>
+<button id="pasteButton">粘贴</button>
+<div id="carousel"></div>
+<div class="controls">
+  <button id="prev">上一页</button>
+  <button id="next">下一页</button>
+</div>
+<script>
+let slides = [];
+let currentIndex = 0;
 
+document.getElementById('pasteButton').addEventListener('click', async () => {
+    try {
+        const text = await navigator.clipboard.readText();
+        let data;
+        try {
+            data = eval('[' + text + ']');
+        } catch (e) {
+            data = JSON.parse(text);
+            if (!Array.isArray(data)) data = [data];
+        }
+        generateSlides(data);
+    } catch (err) {
+        alert('无法读取剪贴板内容: ' + err);
+    }
+});
+
+function generateSlides(data) {
+    const carousel = document.getElementById('carousel');
+    carousel.innerHTML = '';
+    slides = [];
+    data.forEach(item => {
+        const slide = document.createElement('div');
+        slide.className = 'slide';
+        let html = '';
+        if (item.root) {
+            html += '<h2>' + item.root.key + ' - ' + item.root.base_meaning + '</h2>';
+            html += '<p>来源语言: ' + item.root.origin_language + ' 发音: ' + item.root.phonetic + '</p>';
+        }
+        if (item.trunk_words) {
+            html += '<h3>主词汇</h3><ul>';
+            item.trunk_words.forEach(word => {
+                html += '<li>' + word.w + ' - ' + word.zh + (word.hint ? ' (' + word.hint + ')' : '') + '</li>';
+            });
+            html += '</ul>';
+        }
+        if (item.variants) {
+            html += '<h3>变体</h3>';
+            item.variants.forEach(variant => {
+                html += '<h4>' + (variant.label || variant.key) + '</h4><ul>';
+                variant.words.forEach(word => {
+                    html += '<li>' + word.w + ' - ' + word.zh + '</li>';
+                });
+                html += '</ul>';
+            });
+        }
+        slide.innerHTML = html;
+        carousel.appendChild(slide);
+        slides.push(slide);
+    });
+    currentIndex = 0;
+    showSlide(currentIndex);
+}
+
+function showSlide(index) {
+    slides.forEach((slide, i) => {
+        slide.classList.toggle('active', i === index);
+    });
+}
+
+document.getElementById('prev').addEventListener('click', () => {
+    if (slides.length === 0) return;
+    currentIndex = (currentIndex - 1 + slides.length) % slides.length;
+    showSlide(currentIndex);
+});
+
+document.getElementById('next').addEventListener('click', () => {
+    if (slides.length === 0) return;
+    currentIndex = (currentIndex + 1) % slides.length;
+    showSlide(currentIndex);
+});
+</script>
+</body>
+</html>
